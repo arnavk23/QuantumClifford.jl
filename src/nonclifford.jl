@@ -707,6 +707,24 @@ nqubits(pc::UnitaryPauliChannel) = nqubits(pc.paulis[1])
 
 apply!(state::GeneralizedStabilizer, gate::UnitaryPauliChannel; prune_threshold=1e-10) = apply!(state, gate.paulichannel; prune_threshold)
 
+# Embed a GeneralizedStabilizer into a larger register at positions `idx`
+function embed(n::Int, idx, sm::GeneralizedStabilizer)
+    # Embed underlying stabilizer tableau
+    newstab = embed(n, idx, sm.stab)
+    # Remap destabilizer bitvectors by expanding with falses and placing existing bits at idx
+    newdict = DefaultDict{Tuple{BitVector,BitVector}, valtype(sm.destabweights)}(zero(valtype(sm.destabweights)))
+    for ((dᵢ, dⱼ), χ) in sm.destabweights
+        di_new = falses(n)
+        dj_new = falses(n)
+        @inbounds for (k, pos) in enumerate(idx)
+            di_new[pos] = dᵢ[k]
+            dj_new[pos] = dⱼ[k]
+        end
+        newdict[(di_new, dj_new)] += χ
+    end
+    return GeneralizedStabilizer(newstab, newdict)
+end
+
 function tensor(pcs::UnitaryPauliChannel...)
     newpaulis = [tensor(ps...) for ps in Iterators.product([pc.paulis for pc in pcs]...)]
     newweights = [prod(ws) for ws in Iterators.product([pc.weights for pc in pcs]...)]
@@ -761,6 +779,12 @@ with ϕᵢⱼ | Pᵢ | Pⱼ:
 ```
 """
 Base.:(*)(pc::UnitaryPauliChannel, sm::GeneralizedStabilizer) = apply!(sm, pc.paulichannel)
+
+# Apply a single Pauli operator to a GeneralizedStabilizer via its unitary Pauli channel
+Base.:(*)(p::PauliOperator, sm::GeneralizedStabilizer) = apply!(sm, PauliChannel(p))
+
+# Apply a Clifford operator to a GeneralizedStabilizer (left-multiplication sugar)
+Base.:(*)(gate::AbstractCliffordOperator, sm::GeneralizedStabilizer) = apply!(sm, gate)
 
 """
 Calculates the number of non-zero elements in the density matrix `χ`
